@@ -1,5 +1,5 @@
 {
-  "name": "secure-password-generator",
+  "name": "passgen",
   "version": "0.1.0",
   "private": true,
   "scripts": {
