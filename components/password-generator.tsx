@@ -68,6 +68,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { WORD_LISTS } from "@/lib/common-words";
 
 interface PasswordOptions {
@@ -1218,6 +1227,92 @@ export function PasswordGenerator() {
             <RefreshCw className="mr-2 h-4 w-4" />
             Generate New Password
           </Button>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline" className="w-full">
+                Bulk Generate...
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="overflow-y-auto max-h-[calc(100dvh-10rem)] md:max-h-[calc(100dvh-12rem)] md:min-w-[40rem] min-w-[20rem] scrollbar-hidden">
+              <DialogHeader>
+                <DialogTitle>Bulk Generation</DialogTitle>
+                <DialogDescription>
+                  Generate multiple passwords at once and copy or export them.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <Label htmlFor="bulk-count">Count</Label>
+                    <Input
+                      id="bulk-count"
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={bulkCount}
+                      onChange={(e) =>
+                        setBulkCount(
+                          Math.min(500, Math.max(1, Number(e.target.value)))
+                        )
+                      }
+                      className="w-24"
+                    />
+                  </div>
+                  <Button
+                    onClick={() => {
+                      const list: string[] = [];
+                      for (let i = 0; i < bulkCount; i++) {
+                        list.push(
+                          options.type === "readable"
+                            ? generateReadablePassword()
+                            : generateRandomPassword()
+                        );
+                      }
+                      setBulkPasswords(list);
+                    }}
+                  >
+                    <RefreshCw className="mr-2 h-4 w-4" /> Generate {bulkCount}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => copyToClipboard(bulkPasswords.join("\n"))}
+                    disabled={bulkPasswords.length === 0}
+                  >
+                    <Copy className="mr-2 h-4 w-4" /> Copy all
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      const csv = bulkPasswords
+                        .map((p, i) => `${i + 1},"${p.replace(/"/g, '""')}"`)
+                        .join("\n");
+                      const blob = new Blob([`index,password\n${csv}`], {
+                        type: "text/csv;charset=utf-8;",
+                      });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = "passwords.csv";
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      URL.revokeObjectURL(url);
+                    }}
+                    disabled={bulkPasswords.length === 0}
+                  >
+                    <FileDown className="mr-2 h-4 w-4" /> Export CSV
+                  </Button>
+                </div>
+                <Textarea
+                  value={bulkPasswords.join("\n")}
+                  readOnly
+                  rows={Math.min(12, Math.max(4, bulkPasswords.length))}
+                  placeholder="Generated passwords will appear here"
+                  className="font-mono"
+                />
+              </div>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
       {passwordHistory.length > 0 && (
@@ -1633,88 +1728,6 @@ export function PasswordGenerator() {
         </Card>
       )}
 
-      {/* Bulk Generator */}
-      <Card className="md:col-span-2">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Bulk Generation</span>
-          </CardTitle>
-          <CardDescription>
-            Generate multiple passwords and export
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Label htmlFor="bulk-count">Count</Label>
-              <Input
-                id="bulk-count"
-                type="number"
-                min={1}
-                max={500}
-                value={bulkCount}
-                onChange={(e) =>
-                  setBulkCount(
-                    Math.min(500, Math.max(1, Number(e.target.value)))
-                  )
-                }
-                className="w-24"
-              />
-            </div>
-            <Button
-              onClick={() => {
-                const list: string[] = [];
-                for (let i = 0; i < bulkCount; i++) {
-                  list.push(
-                    options.type === "readable"
-                      ? generateReadablePassword()
-                      : generateRandomPassword()
-                  );
-                }
-                setBulkPasswords(list);
-              }}
-            >
-              <RefreshCw className="mr-2 h-4 w-4" /> Generate {bulkCount}
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => copyToClipboard(bulkPasswords.join("\n"))}
-              disabled={bulkPasswords.length === 0}
-            >
-              <Copy className="mr-2 h-4 w-4" /> Copy all
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                const csv = bulkPasswords
-                  .map((p, i) => `${i + 1},"${p.replace(/"/g, '""')}"`)
-                  .join("\n");
-                const blob = new Blob([`index,password\n${csv}`], {
-                  type: "text/csv;charset=utf-8;",
-                });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "passwords.csv";
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                URL.revokeObjectURL(url);
-              }}
-              disabled={bulkPasswords.length === 0}
-            >
-              <FileDown className="mr-2 h-4 w-4" /> Export CSV
-            </Button>
-          </div>
-          <Textarea
-            value={bulkPasswords.join("\n")}
-            readOnly
-            rows={Math.min(12, Math.max(4, bulkPasswords.length))}
-            placeholder="Generated passwords will appear here"
-            className="font-mono"
-          />
-        </CardContent>
-      </Card>
       {/* Delete entry confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>

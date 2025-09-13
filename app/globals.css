@@ -115,6 +115,10 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
