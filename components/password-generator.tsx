@@ -30,6 +30,9 @@ import {
   History,
   Trash2,
   FileDown,
+  Star,
+  StickyNote,
+  Share2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -40,6 +43,12 @@ import {
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 interface PasswordOptions {
   type: "random" | "readable";
@@ -54,6 +63,16 @@ interface PasswordOptions {
   capitalizeWords: boolean;
   includeNumbersInWords: boolean;
   requireCoverage?: boolean;
+}
+
+interface HistoryItem {
+  value: string;
+  favorite?: boolean;
+  note?: string;
+  createdAt: number;
+  type: "random" | "readable";
+  length?: number;
+  wordCount?: number;
 }
 
 const LOWERCASE = "abcdefghijklmnopqrstuvwxyz";
@@ -189,7 +208,7 @@ export function PasswordGenerator() {
     includeNumbersInWords: true,
     requireCoverage: true,
   });
-  const [passwordHistory, setPasswordHistory] = useState<string[]>([]);
+  const [passwordHistory, setPasswordHistory] = useState<HistoryItem[]>([]);
   const [selectedWordList, setSelectedWordList] =
     useState<keyof typeof WORD_LISTS>("common");
   const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
@@ -204,10 +223,78 @@ export function PasswordGenerator() {
     | { state: "compromised"; count: number }
     | { state: "error" }
   >({ state: "idle" });
+  const [autoClearEnabled, setAutoClearEnabled] = useState<boolean>(false);
+  const [autoClearMs, setAutoClearMs] = useState<number>(30000);
+  const autoClearTimerRef =
+    typeof window !== "undefined"
+      ? (window as any).autoClearTimerRef ?? { current: null as number | null }
+      : { current: null as number | null };
 
   // Load persisted state on mount
   useEffect(() => {
     try {
+      // Parse shareable URL params first (highest priority on first load)
+      const urlParams = new URLSearchParams(
+        typeof window !== "undefined" ? window.location.search : ""
+      );
+      if (urlParams.size > 0) {
+        setOptions((prev) => ({
+          ...prev,
+          type: (urlParams.get("type") as "random" | "readable") || prev.type,
+          length: Number(urlParams.get("length")) || prev.length,
+          includeLowercase:
+            urlParams.get("ul") === "true"
+              ? true
+              : urlParams.get("ul") === "false"
+              ? false
+              : prev.includeLowercase,
+          includeUppercase:
+            urlParams.get("uu") === "true"
+              ? true
+              : urlParams.get("uu") === "false"
+              ? false
+              : prev.includeUppercase,
+          includeNumbers:
+            urlParams.get("un") === "true"
+              ? true
+              : urlParams.get("un") === "false"
+              ? false
+              : prev.includeNumbers,
+          includeSymbols:
+            urlParams.get("us") === "true"
+              ? true
+              : urlParams.get("us") === "false"
+              ? false
+              : prev.includeSymbols,
+          excludeSimilar:
+            urlParams.get("xs") === "true"
+              ? true
+              : urlParams.get("xs") === "false"
+              ? false
+              : prev.excludeSimilar,
+          wordCount: Number(urlParams.get("wc")) || prev.wordCount,
+          separator: urlParams.get("sep") ?? prev.separator,
+          capitalizeWords:
+            urlParams.get("cap") === "true"
+              ? true
+              : urlParams.get("cap") === "false"
+              ? false
+              : prev.capitalizeWords,
+          includeNumbersInWords:
+            urlParams.get("num") === "true"
+              ? true
+              : urlParams.get("num") === "false"
+              ? false
+              : prev.includeNumbersInWords,
+          requireCoverage:
+            urlParams.get("cov") === "true"
+              ? true
+              : urlParams.get("cov") === "false"
+              ? false
+              : prev.requireCoverage,
+        }));
+      }
+
       const storedOptions = localStorage.getItem("pg_options");
       const storedHistory = localStorage.getItem("pg_history");
       const storedPassword = localStorage.getItem("pg_last_password");
@@ -218,8 +305,23 @@ export function PasswordGenerator() {
       const storedPreset = localStorage.getItem("pg_preset");
       const storedBulkCount = localStorage.getItem("pg_bulk_count");
       const storedBreach = localStorage.getItem("pg_breach_check");
+      const storedAutoClear = localStorage.getItem("pg_auto_clear_enabled");
+      const storedAutoClearMs = localStorage.getItem("pg_auto_clear_ms");
       if (storedOptions) setOptions(JSON.parse(storedOptions));
-      if (storedHistory) setPasswordHistory(JSON.parse(storedHistory));
+      if (storedHistory) {
+        const parsed = JSON.parse(storedHistory);
+        if (Array.isArray(parsed) && typeof parsed[0] === "string") {
+          setPasswordHistory(
+            (parsed as string[]).map((v) => ({
+              value: v,
+              createdAt: Date.now(),
+              type: "random",
+            }))
+          );
+        } else {
+          setPasswordHistory(parsed);
+        }
+      }
       if (storedPassword) setPassword(storedPassword);
       if (storedWordList && WORD_LISTS[storedWordList])
         setSelectedWordList(storedWordList);
@@ -227,6 +329,9 @@ export function PasswordGenerator() {
       if (storedPreset) setPreset(storedPreset);
       if (storedBulkCount) setBulkCount(Number(storedBulkCount));
       if (storedBreach !== null) setBreachCheckEnabled(storedBreach === "true");
+      if (storedAutoClear !== null)
+        setAutoClearEnabled(storedAutoClear === "true");
+      if (storedAutoClearMs) setAutoClearMs(Number(storedAutoClearMs));
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -272,6 +377,12 @@ export function PasswordGenerator() {
       localStorage.setItem("pg_breach_check", String(breachCheckEnabled));
     } catch {}
   }, [breachCheckEnabled]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("pg_auto_clear_enabled", String(autoClearEnabled));
+      localStorage.setItem("pg_auto_clear_ms", String(autoClearMs));
+    } catch {}
+  }, [autoClearEnabled, autoClearMs]);
 
   const generateReadablePassword = useCallback(() => {
     const wordList = WORD_LISTS[selectedWordList];
@@ -374,10 +485,19 @@ export function PasswordGenerator() {
       setPassword(newPassword);
       setCopied(false);
 
-      // Add to history
+      // Add to history (dedupe by value), unlimited with metadata
       setPasswordHistory((prev) => {
-        const updated = [newPassword, ...prev.filter((p) => p !== newPassword)];
-        return updated.slice(0, 10); // Keep only last 10 passwords
+        const dedup = prev.filter((item) => item.value !== newPassword);
+        const meta: HistoryItem = {
+          value: newPassword,
+          createdAt: Date.now(),
+          type: options.type,
+          length: options.type === "random" ? options.length : undefined,
+          wordCount:
+            options.type === "readable" ? options.wordCount : undefined,
+        };
+        const updated: HistoryItem[] = [meta, ...dedup];
+        return updated;
       });
     }
   }, [options.type, generateReadablePassword, generateRandomPassword]);
@@ -393,6 +513,26 @@ export function PasswordGenerator() {
         description: "Password copied to clipboard.",
       });
       setTimeout(() => setCopied(false), 2000);
+
+      // Auto-clear clipboard if enabled
+      if (autoClearEnabled) {
+        if (autoClearTimerRef.current) {
+          clearTimeout(autoClearTimerRef.current);
+        }
+        autoClearTimerRef.current = window.setTimeout(async () => {
+          try {
+            await navigator.clipboard.writeText("");
+            toast({
+              title: "Clipboard cleared",
+              description: `Password removed from clipboard after ${Math.round(
+                autoClearMs / 1000
+              )}s`,
+            });
+          } catch (e) {
+            // ignore failures (browser permission)
+          }
+        }, autoClearMs);
+      }
     } catch (err) {
       toast({
         title: "Error",
@@ -703,7 +843,7 @@ export function PasswordGenerator() {
               <span>Offline crack: ~{estimate.offline}</span>
             </div>
             {/* Breach status */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <div className="text-xs">
                 {breachStatus.state === "idle" && (
                   <span className="text-muted-foreground">
@@ -743,6 +883,42 @@ export function PasswordGenerator() {
                   checked={breachCheckEnabled}
                   onCheckedChange={setBreachCheckEnabled}
                 />
+              </div>
+            </div>
+            {/* Auto-clear clipboard */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="auto-clear"
+                  className="text-xs text-muted-foreground"
+                >
+                  Auto-clear clipboard
+                </Label>
+                <Switch
+                  id="auto-clear"
+                  checked={autoClearEnabled}
+                  onCheckedChange={setAutoClearEnabled}
+                />
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <Label
+                  htmlFor="auto-clear-ms"
+                  className="text-xs text-muted-foreground"
+                >
+                  After
+                </Label>
+                <Input
+                  id="auto-clear-ms"
+                  type="number"
+                  className="w-24 h-8"
+                  min={3000}
+                  step={1000}
+                  value={autoClearMs}
+                  onChange={(e) =>
+                    setAutoClearMs(Math.max(3000, Number(e.target.value)))
+                  }
+                />
+                <span className="text-muted-foreground">ms</span>
               </div>
             </div>
           </div>
@@ -1097,34 +1273,171 @@ export function PasswordGenerator() {
                 </CardTitle>
                 <CardDescription>Recently generated passwords</CardDescription>
               </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPasswordHistory([])}
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Clear
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    const favs = passwordHistory
+                      .filter((h) => h.favorite)
+                      .map((h) => h.value)
+                      .join("\n");
+                    copyToClipboard(favs);
+                  }}
+                  disabled={passwordHistory.every((h) => !h.favorite)}
+                >
+                  <Star className="h-4 w-4 mr-2" /> Copy favorites
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Quick actions */}
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setPasswordHistory([])}
+                onClick={() =>
+                  setPasswordHistory((prev) => prev.filter((h) => h.favorite))
+                }
+                disabled={passwordHistory.every((h) => !h.favorite)}
               >
-                <Trash2 className="h-4 w-4 mr-2" />
-                Clear
+                Show favorites only
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPasswordHistory((prev) =>
+                    [...prev].sort((a, b) => b.createdAt - a.createdAt)
+                  )
+                }
+              >
+                Sort newest
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setPasswordHistory((prev) =>
+                    [...prev].sort((a, b) => a.createdAt - b.createdAt)
+                  )
+                }
+              >
+                Sort oldest
               </Button>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {passwordHistory.map((historyPassword, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-2 rounded border"
-                >
-                  <code className="text-sm font-mono flex-1 truncate mr-2">
-                    {historyPassword}
-                  </code>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => copyToClipboard(historyPassword)}
-                    className="h-8 w-8 p-0"
-                  >
-                    <Copy className="h-4 w-4" />
-                  </Button>
+
+            {/* Group by date */}
+            <div className="space-y-3">
+              {Object.entries(
+                passwordHistory.reduce<Record<string, HistoryItem[]>>(
+                  (acc, item) => {
+                    const d = new Date(item.createdAt);
+                    const key = d.toLocaleDateString();
+                    (acc[key] ||= []).push(item);
+                    return acc;
+                  },
+                  {}
+                )
+              ).map(([date, items]) => (
+                <div key={date} className="border rounded-md">
+                  <div className="px-3 py-2 text-sm font-medium bg-secondary/40 flex items-center justify-between">
+                    <span>{date}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {items.length} item(s)
+                    </span>
+                  </div>
+                  <div className="p-2 space-y-2">
+                    {items.map((item, idx) => (
+                      <div
+                        key={`${item.value}-${item.createdAt}-${idx}`}
+                        className="flex items-center justify-between p-2 rounded border"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <code className="text-sm font-mono truncate">
+                              {item.value}
+                            </code>
+                            <span className="text-xs text-muted-foreground">
+                              {item.type === "random"
+                                ? `${item.length} chars`
+                                : `${item.wordCount} words`}
+                            </span>
+                            {item.favorite && (
+                              <Star className="h-3.5 w-3.5 text-amber-500" />
+                            )}
+                          </div>
+                          {item.note && (
+                            <div className="text-xs text-muted-foreground truncate">
+                              {item.note}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => copyToClipboard(item.value)}
+                            className="h-8 w-8 p-0"
+                            aria-label="Copy history password"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setPasswordHistory((prev) =>
+                                prev.map((h) =>
+                                  h.createdAt === item.createdAt &&
+                                  h.value === item.value
+                                    ? { ...h, favorite: !h.favorite }
+                                    : h
+                                )
+                              )
+                            }
+                            className="h-8 w-8 p-0"
+                            aria-label="Toggle favorite"
+                          >
+                            <Star
+                              className={`h-4 w-4 ${
+                                item.favorite ? "text-amber-500" : ""
+                              }`}
+                            />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              const note = prompt("Add note", item.note ?? "");
+                              if (note !== null)
+                                setPasswordHistory((prev) =>
+                                  prev.map((h) =>
+                                    h.createdAt === item.createdAt &&
+                                    h.value === item.value
+                                      ? { ...h, note: note || undefined }
+                                      : h
+                                  )
+                                );
+                            }}
+                            className="h-8 w-8 p-0"
+                            aria-label="Edit note"
+                          >
+                            <StickyNote className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1149,6 +1462,37 @@ export function PasswordGenerator() {
               secure for high-risk accounts
             </li>
           </ul>
+          <div className="pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const params = new URLSearchParams();
+                params.set("type", options.type);
+                params.set("length", String(options.length));
+                params.set("ul", String(options.includeLowercase));
+                params.set("uu", String(options.includeUppercase));
+                params.set("un", String(options.includeNumbers));
+                params.set("us", String(options.includeSymbols));
+                params.set("xs", String(options.excludeSimilar));
+                params.set("wc", String(options.wordCount));
+                params.set("sep", options.separator);
+                params.set("cap", String(options.capitalizeWords));
+                params.set("num", String(options.includeNumbersInWords));
+                params.set("cov", String(!!options.requireCoverage));
+                const url = `${location.origin}${
+                  location.pathname
+                }?${params.toString()}`;
+                navigator.clipboard.writeText(url);
+                toast({
+                  title: "Share link copied",
+                  description: "Settings URL copied to clipboard",
+                });
+              }}
+            >
+              <Share2 className="h-4 w-4 mr-2" /> Share settings
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
