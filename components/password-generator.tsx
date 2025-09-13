@@ -169,6 +169,9 @@ export function PasswordGenerator() {
     Record<string, number>
   >({});
   const [copiedHistoryKey, setCopiedHistoryKey] = useState<string | null>(null);
+  const [addNoteDialogOpen, setAddNoteDialogOpen] = useState<boolean>(false);
+  const [addNoteTarget, setAddNoteTarget] = useState<HistoryItem | null>(null);
+  const [addNoteText, setAddNoteText] = useState<string>("");
 
   // Load persisted state on mount
   useEffect(() => {
@@ -1452,7 +1455,8 @@ export function PasswordGenerator() {
                             );
                           }}
                         >
-                          <Copy className="mr-2 h-4 w-4" /> Copy group
+                          <Copy className="mr-2 h-4 w-4" />{" "}
+                          <p className="hover:no-underline">Copy group</p>
                         </Button>
                       </div>
                     </AccordionTrigger>
@@ -1672,24 +1676,8 @@ export function PasswordGenerator() {
                                             size="sm"
                                             variant="ghost"
                                             onClick={() => {
-                                              const note = prompt(
-                                                "Add note",
-                                                item.note ?? ""
-                                              );
-                                              if (note !== null)
-                                                setPasswordHistory((prev) =>
-                                                  prev.map((h) =>
-                                                    h.createdAt ===
-                                                      item.createdAt &&
-                                                    h.value === item.value
-                                                      ? {
-                                                          ...h,
-                                                          note:
-                                                            note || undefined,
-                                                        }
-                                                      : h
-                                                  )
-                                                );
+                                              setAddNoteTarget(item);
+                                              setAddNoteDialogOpen(true);
                                             }}
                                             className="h-8 w-8 p-0"
                                             aria-label="Edit note"
@@ -1727,6 +1715,54 @@ export function PasswordGenerator() {
           </CardContent>
         </Card>
       )}
+
+      {/* Add Note */}
+      <AlertDialog open={addNoteDialogOpen} onOpenChange={setAddNoteDialogOpen}>
+        <AlertDialogContent onOpenAutoFocus={(e) => e.preventDefault()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Add Note</AlertDialogTitle>
+            <AlertDialogDescription>
+              Add a note to the selected password.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            className="mt-4"
+            value={addNoteText}
+            onChange={(e) => setAddNoteText(e.target.value)}
+            placeholder="Add a note"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setAddNoteDialogOpen(false);
+                setAddNoteTarget(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setPasswordHistory((prev) =>
+                  prev.map((h) =>
+                    h.createdAt === addNoteTarget?.createdAt &&
+                    h.value === addNoteTarget?.value
+                      ? {
+                          ...h,
+                          note: addNoteText,
+                        }
+                      : h
+                  )
+                );
+                setAddNoteDialogOpen(false);
+                setAddNoteTarget(null);
+                setAddNoteText("");
+              }}
+            >
+              Add
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete entry confirmation */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
