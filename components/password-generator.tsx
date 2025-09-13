@@ -1549,57 +1549,6 @@ export function PasswordGenerator() {
         </Card>
       )}
 
-      {/* Security Tips */}
-      {/* <Card className="order-3 lg:order-none">
-        <CardHeader>
-          <CardTitle className="text-lg">Security Tips</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>• Use a unique password for each account</li>
-            <li>• Store passwords in a secure password manager</li>
-            <li>• Enable two-factor authentication when available</li>
-            <li>• Never share your passwords with others</li>
-            <li>• Update passwords regularly for sensitive accounts</li>
-            <li>
-              • Human-readable passwords are easier to remember but may be less
-              secure for high-risk accounts
-            </li>
-          </ul>
-          <div className="pt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                const params = new URLSearchParams();
-                params.set("type", options.type);
-                params.set("length", String(options.length));
-                params.set("ul", String(options.includeLowercase));
-                params.set("uu", String(options.includeUppercase));
-                params.set("un", String(options.includeNumbers));
-                params.set("us", String(options.includeSymbols));
-                params.set("xs", String(options.excludeSimilar));
-                params.set("wc", String(options.wordCount));
-                params.set("sep", options.separator);
-                params.set("cap", String(options.capitalizeWords));
-                params.set("num", String(options.includeNumbersInWords));
-                params.set("cov", String(!!options.requireCoverage));
-                const url = `${location.origin}${
-                  location.pathname
-                }?${params.toString()}`;
-                navigator.clipboard.writeText(url);
-                toast({
-                  title: "Share link copied",
-                  description: "Settings URL copied to clipboard",
-                });
-              }}
-            >
-              <Share2 className="h-4 w-4 mr-2" /> Share settings
-            </Button>
-          </div>
-        </CardContent>
-      </Card> */}
-
       {/* Bulk Generator */}
       <Card className="md:col-span-2">
         <CardHeader>
