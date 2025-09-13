@@ -9,25 +9,25 @@ import { SWRegister } from "@/components/sw-register";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://spg.danieyal.qzz.io"),
-  title: "Secure Password Generator",
+  metadataBase: new URL("https://passgen.danieyal.qzz.io"),
+  title: "PassGen",
   description:
     "Create strong, unique passwords instantly. Flexible options, readable passphrases, and one-click copy.",
   openGraph: {
-    title: "Secure Password Generator",
+    title: "PassGen",
     description:
       "Create strong, unique passwords instantly. Flexible options, readable passphrases, and one-click copy.",
-    images: ["https://spg.danieyal.qzz.io/og-image.png"],
-    url: "https://spg.danieyal.qzz.io",
-    siteName: "Secure Password Generator",
+    images: ["https://passgen.danieyal.qzz.io/og-image.png"],
+    url: "https://passgen.danieyal.qzz.io",
+    siteName: "PassGen",
     locale: "en_US",
     type: "website",
   },
   twitter: {
-    title: "Secure Password Generator",
+    title: "PassGen",
     description:
       "Create strong, unique passwords instantly. Flexible options, readable passphrases, and one-click copy.",
-    images: ["https://spg.danieyal.qzz.io/og-image.png"],
+    images: ["https://passgen.danieyal.qzz.io/og-image.png"],
   },
 };
 

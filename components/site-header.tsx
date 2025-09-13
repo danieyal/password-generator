@@ -10,8 +10,7 @@ export function SiteHeader() {
       <div className="container mx-auto max-w flex h-14 items-center justify-between px-4">
         <Link href="/" className="flex items-center gap-2 text-sm font-medium">
           <Shield className="h-5 w-5 text-primary" />
-          <span className="hidden sm:inline">Secure Password Generator</span>
-          <span className="sm:hidden">PassGen</span>
+          <span>PassGen</span>
         </Link>
         <div className="flex items-center gap-2">
           <ModeToggle />
