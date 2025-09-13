@@ -22,7 +22,15 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Copy, RefreshCw, Shield, Check, History, Trash2 } from "lucide-react";
+import {
+  Copy,
+  RefreshCw,
+  Shield,
+  Check,
+  History,
+  Trash2,
+  FileDown,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
   Tooltip,
@@ -31,6 +39,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 
 interface PasswordOptions {
   type: "random" | "readable";
@@ -44,6 +53,7 @@ interface PasswordOptions {
   separator: string;
   capitalizeWords: boolean;
   includeNumbersInWords: boolean;
+  requireCoverage?: boolean;
 }
 
 const LOWERCASE = "abcdefghijklmnopqrstuvwxyz";
@@ -177,11 +187,23 @@ export function PasswordGenerator() {
     separator: "-",
     capitalizeWords: true,
     includeNumbersInWords: true,
+    requireCoverage: true,
   });
   const [passwordHistory, setPasswordHistory] = useState<string[]>([]);
   const [selectedWordList, setSelectedWordList] =
     useState<keyof typeof WORD_LISTS>("common");
   const [autoGenerate, setAutoGenerate] = useState<boolean>(true);
+  const [preset, setPreset] = useState<string>("custom");
+  const [bulkCount, setBulkCount] = useState<number>(10);
+  const [bulkPasswords, setBulkPasswords] = useState<string[]>([]);
+  const [breachCheckEnabled, setBreachCheckEnabled] = useState<boolean>(false);
+  const [breachStatus, setBreachStatus] = useState<
+    | { state: "idle" }
+    | { state: "checking" }
+    | { state: "safe" }
+    | { state: "compromised"; count: number }
+    | { state: "error" }
+  >({ state: "idle" });
 
   // Load persisted state on mount
   useEffect(() => {
@@ -193,12 +215,18 @@ export function PasswordGenerator() {
         | keyof typeof WORD_LISTS
         | null;
       const storedAuto = localStorage.getItem("pg_auto_generate");
+      const storedPreset = localStorage.getItem("pg_preset");
+      const storedBulkCount = localStorage.getItem("pg_bulk_count");
+      const storedBreach = localStorage.getItem("pg_breach_check");
       if (storedOptions) setOptions(JSON.parse(storedOptions));
       if (storedHistory) setPasswordHistory(JSON.parse(storedHistory));
       if (storedPassword) setPassword(storedPassword);
       if (storedWordList && WORD_LISTS[storedWordList])
         setSelectedWordList(storedWordList);
       if (storedAuto !== null) setAutoGenerate(storedAuto === "true");
+      if (storedPreset) setPreset(storedPreset);
+      if (storedBulkCount) setBulkCount(Number(storedBulkCount));
+      if (storedBreach !== null) setBreachCheckEnabled(storedBreach === "true");
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -229,6 +257,21 @@ export function PasswordGenerator() {
       localStorage.setItem("pg_auto_generate", String(autoGenerate));
     } catch {}
   }, [autoGenerate]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("pg_preset", preset);
+    } catch {}
+  }, [preset]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("pg_bulk_count", String(bulkCount));
+    } catch {}
+  }, [bulkCount]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("pg_breach_check", String(breachCheckEnabled));
+    } catch {}
+  }, [breachCheckEnabled]);
 
   const generateReadablePassword = useCallback(() => {
     const wordList = WORD_LISTS[selectedWordList];
@@ -288,15 +331,34 @@ export function PasswordGenerator() {
       return "";
     }
 
-    let result = "";
-    const array = new Uint8Array(options.length);
-    crypto.getRandomValues(array);
-
-    for (let i = 0; i < options.length; i++) {
-      result += charset[array[i] % charset.length];
+    // Coverage-aware generation with shuffle
+    const coveragePools: string[] = [];
+    if (options.requireCoverage) {
+      if (options.includeLowercase) coveragePools.push(LOWERCASE);
+      if (options.includeUppercase) coveragePools.push(UPPERCASE);
+      if (options.includeNumbers) coveragePools.push(NUMBERS);
+      if (options.includeSymbols) coveragePools.push(SYMBOLS);
     }
 
-    return result;
+    const bytes = new Uint8Array(options.length);
+    crypto.getRandomValues(bytes);
+
+    const chars: string[] = [];
+    // Ensure at least one from each selected bucket if enabled
+    for (let i = 0; i < coveragePools.length && i < options.length; i++) {
+      const pool = coveragePools[i];
+      chars.push(pool[bytes[i] % pool.length]);
+    }
+    // Fill the rest from the full charset
+    for (let i = chars.length; i < options.length; i++) {
+      chars.push(charset[bytes[i] % charset.length]);
+    }
+    // Fisher-Yates shuffle using existing random bytes
+    for (let i = chars.length - 1; i > 0; i--) {
+      const j = bytes[i] % (i + 1);
+      [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join("");
   }, [options, toast]);
 
   const generatePassword = useCallback(() => {
@@ -368,6 +430,183 @@ export function PasswordGenerator() {
   };
 
   const strength = getPasswordStrength();
+
+  // Entropy & time-to-crack estimates
+  const estimate = (() => {
+    const log2 = (n: number) => Math.log(n) / Math.log(2);
+    let bits = 0;
+    if (options.type === "random") {
+      let charset = "";
+      if (options.includeLowercase) charset += LOWERCASE;
+      if (options.includeUppercase) charset += UPPERCASE;
+      if (options.includeNumbers) charset += NUMBERS;
+      if (options.includeSymbols) charset += SYMBOLS;
+      if (options.excludeSimilar) {
+        charset = charset
+          .split("")
+          .filter((c) => !SIMILAR_CHARS.includes(c))
+          .join("");
+      }
+      const S = Math.max(1, charset.length);
+      bits = options.length * log2(S);
+    } else {
+      const wordListSize = WORD_LISTS[selectedWordList].length;
+      bits = options.wordCount * log2(Math.max(1, wordListSize));
+      if (options.capitalizeWords) bits += options.wordCount * 1; // approx 1 bit/word
+      if (options.includeNumbersInWords) bits += log2(999); // ~10 bits
+    }
+    const guesses = Math.pow(2, bits);
+    const onlineRate = 100; // guesses/sec (rate-limited online)
+    const offlineRate = 1e10; // high-end GPU rig
+    const medianFactor = 0.5;
+    const onlineSeconds = (guesses * medianFactor) / onlineRate;
+    const offlineSeconds = (guesses * medianFactor) / offlineRate;
+    const fmt = (s: number) => {
+      if (!isFinite(s) || s <= 0) return "instant";
+      const units: [number, string][] = [
+        [60, "s"],
+        [60, "m"],
+        [24, "h"],
+        [365, "d"],
+        [Number.MAX_SAFE_INTEGER, "y"],
+      ];
+      let value = s;
+      let label = "s";
+      let idx = 0;
+      while (idx < units.length - 1 && value >= units[idx][0]) {
+        value = value / units[idx][0];
+        label = units[idx + 1][1];
+        idx++;
+      }
+      return `${value.toFixed(1)}${label}`;
+    };
+    return {
+      bits: Math.round(bits),
+      online: fmt(onlineSeconds),
+      offline: fmt(offlineSeconds),
+    };
+  })();
+
+  // Breach (HIBP) k-anonymity check
+  async function sha1Hex(input: string): Promise<string> {
+    const enc = new TextEncoder();
+    const data = enc.encode(input);
+    const hashBuffer = await crypto.subtle.digest("SHA-1", data);
+    const bytes = new Uint8Array(hashBuffer);
+    return Array.from(bytes)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("")
+      .toUpperCase();
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const controller = new AbortController();
+    async function run() {
+      if (!breachCheckEnabled || !password) {
+        setBreachStatus({ state: "idle" });
+        return;
+      }
+      try {
+        setBreachStatus({ state: "checking" });
+        const hex = await sha1Hex(password);
+        const prefix = hex.slice(0, 5);
+        const suffix = hex.slice(5);
+        const res = await fetch(
+          `https://api.pwnedpasswords.com/range/${prefix}`,
+          {
+            signal: controller.signal,
+            headers: { "Add-Padding": "true" },
+            cache: "no-store",
+          }
+        );
+        if (!res.ok) throw new Error("network");
+        const text = await res.text();
+        if (cancelled) return;
+        const line = text.split("\n").find((l) => l.startsWith(suffix));
+        if (line) {
+          const parts = line.trim().split(":");
+          const count = Number(parts[1] || 0);
+          setBreachStatus({
+            state: "compromised",
+            count: isNaN(count) ? 0 : count,
+          });
+        } else {
+          setBreachStatus({ state: "safe" });
+        }
+      } catch {
+        if (!cancelled) setBreachStatus({ state: "error" });
+      }
+    }
+    // debounce slightly to avoid spamming API while typing
+    const t = setTimeout(run, 300);
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(t);
+    };
+  }, [breachCheckEnabled, password]);
+
+  // Preset handling
+  const applyPreset = (key: string) => {
+    setPreset(key);
+    if (key === "custom") return;
+    if (key === "nist-strong") {
+      setOptions((prev) => ({
+        ...prev,
+        type: "random",
+        length: Math.max(prev.length, 16),
+        includeLowercase: true,
+        includeUppercase: true,
+        includeNumbers: true,
+        includeSymbols: true,
+        excludeSimilar: false,
+        requireCoverage: true,
+      }));
+    } else if (key === "no-symbols-16") {
+      setOptions((prev) => ({
+        ...prev,
+        type: "random",
+        length: Math.max(prev.length, 16),
+        includeLowercase: true,
+        includeUppercase: true,
+        includeNumbers: true,
+        includeSymbols: false,
+        requireCoverage: true,
+      }));
+    } else if (key === "passphrase-4w") {
+      setOptions((prev) => ({
+        ...prev,
+        type: "readable",
+        wordCount: Math.max(prev.wordCount, 4),
+        separator: "-",
+        capitalizeWords: true,
+        includeNumbersInWords: true,
+      }));
+    }
+  };
+
+  const validateCompliance = () => {
+    const issues: string[] = [];
+    if (options.type === "random") {
+      if (options.length < 12) issues.push("Length under 12");
+      const selected = [
+        options.includeLowercase,
+        options.includeUppercase,
+        options.includeNumbers,
+        options.includeSymbols,
+      ].filter(Boolean).length;
+      if (selected < 3) issues.push("Use at least 3 character types");
+      if (options.requireCoverage === false)
+        issues.push("Enable guaranteed coverage");
+    } else {
+      if (options.wordCount < 4) issues.push("Use ≥ 4 words");
+      if (!options.includeNumbersInWords)
+        issues.push("Add a number to increase entropy");
+    }
+    return issues;
+  };
+  const complianceIssues = validateCompliance();
 
   useEffect(() => {
     if (autoGenerate) {
@@ -457,6 +696,55 @@ export function PasswordGenerator() {
                 style={{ width: `${(strength.score / 6) * 100}%` }}
               />
             </div>
+            {/* Entropy & Crack Time */}
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-3">
+              <span>Entropy: {estimate.bits} bits</span>
+              <span>Online crack: ~{estimate.online}</span>
+              <span>Offline crack: ~{estimate.offline}</span>
+            </div>
+            {/* Breach status */}
+            <div className="flex items-center justify-between">
+              <div className="text-xs">
+                {breachStatus.state === "idle" && (
+                  <span className="text-muted-foreground">
+                    Breach check off
+                  </span>
+                )}
+                {breachStatus.state === "checking" && (
+                  <span className="text-muted-foreground">
+                    Checking breaches…
+                  </span>
+                )}
+                {breachStatus.state === "safe" && (
+                  <span className="text-green-600 dark:text-green-400">
+                    Not found in known breaches
+                  </span>
+                )}
+                {breachStatus.state === "compromised" && (
+                  <span className="text-red-600 dark:text-red-400">
+                    Found in breaches ({breachStatus.count.toLocaleString()})
+                  </span>
+                )}
+                {breachStatus.state === "error" && (
+                  <span className="text-amber-600 dark:text-amber-400">
+                    Breach check failed
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="breach-check"
+                  className="text-xs text-muted-foreground"
+                >
+                  Breach check
+                </Label>
+                <Switch
+                  id="breach-check"
+                  checked={breachCheckEnabled}
+                  onCheckedChange={setBreachCheckEnabled}
+                />
+              </div>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -472,8 +760,13 @@ export function PasswordGenerator() {
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label className="text-base font-medium">Password Type</Label>
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <Label className="text-base font-medium">Password Type</Label>
+                <Badge variant="outline" className="ml-1">
+                  {preset === "custom" ? "Custom" : "Preset"}
+                </Badge>
+              </div>
               <div className="flex items-center gap-2">
                 <Label
                   htmlFor="auto-generate"
@@ -502,6 +795,40 @@ export function PasswordGenerator() {
                 <SelectItem value="readable">Human Readable</SelectItem>
               </SelectContent>
             </Select>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-sm">Preset</Label>
+                <Select value={preset} onValueChange={(v) => applyPreset(v)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select preset" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">Custom</SelectItem>
+                    <SelectItem value="nist-strong">
+                      Strong (16+, all types)
+                    </SelectItem>
+                    <SelectItem value="no-symbols-16">
+                      No symbols (16+)
+                    </SelectItem>
+                    <SelectItem value="passphrase-4w">
+                      Passphrase (4+ words)
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-sm">Compliance</Label>
+                <div className="text-xs text-muted-foreground min-h-9 flex items-center">
+                  {complianceIssues.length === 0 ? (
+                    <span className="text-green-600 dark:text-green-400">
+                      Meets suggested policy
+                    </span>
+                  ) : (
+                    <span>Issues: {complianceIssues.join(", ")}</span>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
 
           <Separator />
@@ -629,6 +956,21 @@ export function PasswordGenerator() {
                   />
                   <Label htmlFor="excludeSimilar" className="flex-1">
                     Exclude similar characters (i, l, 1, L, o, 0, O)
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="requireCoverage"
+                    checked={!!options.requireCoverage}
+                    onCheckedChange={(checked) =>
+                      setOptions((prev) => ({
+                        ...prev,
+                        requireCoverage: !!checked,
+                      }))
+                    }
+                  />
+                  <Label htmlFor="requireCoverage" className="flex-1">
+                    Guarantee at least one of each selected type
                   </Label>
                 </div>
               </div>
@@ -807,6 +1149,89 @@ export function PasswordGenerator() {
               secure for high-risk accounts
             </li>
           </ul>
+        </CardContent>
+      </Card>
+
+      {/* Bulk Generator */}
+      <Card className="md:col-span-2">
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Bulk Generation</span>
+          </CardTitle>
+          <CardDescription>
+            Generate multiple passwords and export
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Label htmlFor="bulk-count">Count</Label>
+              <Input
+                id="bulk-count"
+                type="number"
+                min={1}
+                max={500}
+                value={bulkCount}
+                onChange={(e) =>
+                  setBulkCount(
+                    Math.min(500, Math.max(1, Number(e.target.value)))
+                  )
+                }
+                className="w-24"
+              />
+            </div>
+            <Button
+              onClick={() => {
+                const list: string[] = [];
+                for (let i = 0; i < bulkCount; i++) {
+                  list.push(
+                    options.type === "readable"
+                      ? generateReadablePassword()
+                      : generateRandomPassword()
+                  );
+                }
+                setBulkPasswords(list);
+              }}
+            >
+              <RefreshCw className="mr-2 h-4 w-4" /> Generate {bulkCount}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => copyToClipboard(bulkPasswords.join("\n"))}
+              disabled={bulkPasswords.length === 0}
+            >
+              <Copy className="mr-2 h-4 w-4" /> Copy all
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const csv = bulkPasswords
+                  .map((p, i) => `${i + 1},"${p.replace(/"/g, '""')}"`)
+                  .join("\n");
+                const blob = new Blob([`index,password\n${csv}`], {
+                  type: "text/csv;charset=utf-8;",
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "passwords.csv";
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(url);
+              }}
+              disabled={bulkPasswords.length === 0}
+            >
+              <FileDown className="mr-2 h-4 w-4" /> Export CSV
+            </Button>
+          </div>
+          <Textarea
+            value={bulkPasswords.join("\n")}
+            readOnly
+            rows={Math.min(12, Math.max(4, bulkPasswords.length))}
+            placeholder="Generated passwords will appear here"
+            className="font-mono"
+          />
         </CardContent>
       </Card>
     </div>
