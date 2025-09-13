@@ -44,6 +44,16 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -235,6 +245,11 @@ export function PasswordGenerator() {
     useState<boolean>(false);
   const [historySort, setHistorySort] = useState<"newest" | "oldest">("newest");
   const [historySearch, setHistorySearch] = useState<string>("");
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState<boolean>(false);
+  const [deleteStage, setDeleteStage] = useState<1 | 2>(1);
+  const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
+  const [clearDialogOpen, setClearDialogOpen] = useState<boolean>(false);
+  const [clearStage, setClearStage] = useState<1 | 2>(1);
 
   // Load persisted state on mount
   useEffect(() => {
@@ -1310,7 +1325,10 @@ export function PasswordGenerator() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => setPasswordHistory([])}
+                  onClick={() => {
+                    setClearStage(1);
+                    setClearDialogOpen(true);
+                  }}
                 >
                   <Trash2 className="h-4 w-4 mr-2" />
                   Clear
@@ -1509,22 +1527,9 @@ export function PasswordGenerator() {
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => {
-                                  if (
-                                    confirm("Delete this entry?") &&
-                                    confirm(
-                                      "Are you sure? This cannot be undone."
-                                    )
-                                  ) {
-                                    setPasswordHistory((prev) =>
-                                      prev.filter(
-                                        (h) =>
-                                          !(
-                                            h.createdAt === item.createdAt &&
-                                            h.value === item.value
-                                          )
-                                      )
-                                    );
-                                  }
+                                  setDeleteTarget(item);
+                                  setDeleteStage(1);
+                                  setDeleteDialogOpen(true);
                                 }}
                                 className="h-8 w-8 p-0"
                                 aria-label="Delete entry"
@@ -1677,6 +1682,93 @@ export function PasswordGenerator() {
           />
         </CardContent>
       </Card>
+      {/* Delete entry confirmation */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteStage === 1 ? "Delete this entry?" : "Are you sure?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteStage === 1
+                ? "This will remove the selected password from history."
+                : "This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setDeleteStage(1);
+                setDeleteTarget(null);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteStage === 1) {
+                  setDeleteStage(2);
+                } else if (deleteStage === 2 && deleteTarget) {
+                  setPasswordHistory((prev) =>
+                    prev.filter(
+                      (h) =>
+                        !(
+                          h.createdAt === deleteTarget.createdAt &&
+                          h.value === deleteTarget.value
+                        )
+                    )
+                  );
+                  setDeleteDialogOpen(false);
+                  setDeleteStage(1);
+                  setDeleteTarget(null);
+                }
+              }}
+            >
+              {deleteStage === 1 ? "Continue" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Clear all confirmation */}
+      <AlertDialog open={clearDialogOpen} onOpenChange={setClearDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {clearStage === 1 ? "Clear all history?" : "Are you sure?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {clearStage === 1
+                ? "This will remove all saved passwords from history."
+                : "This cannot be undone."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              onClick={() => {
+                setClearDialogOpen(false);
+                setClearStage(1);
+              }}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (clearStage === 1) {
+                  setClearStage(2);
+                } else if (clearStage === 2) {
+                  setPasswordHistory([]);
+                  setClearDialogOpen(false);
+                  setClearStage(1);
+                }
+              }}
+            >
+              {clearStage === 1 ? "Continue" : "Clear"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
