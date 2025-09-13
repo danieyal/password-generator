@@ -229,6 +229,12 @@ export function PasswordGenerator() {
     typeof window !== "undefined"
       ? (window as any).autoClearTimerRef ?? { current: null as number | null }
       : { current: null as number | null };
+  const [historyFavoritesOnly, setHistoryFavoritesOnly] =
+    useState<boolean>(false);
+  const [historyPinFavorites, setHistoryPinFavorites] =
+    useState<boolean>(false);
+  const [historySort, setHistorySort] = useState<"newest" | "oldest">("newest");
+  const [historySearch, setHistorySearch] = useState<string>("");
 
   // Load persisted state on mount
   useEffect(() => {
@@ -570,6 +576,35 @@ export function PasswordGenerator() {
   };
 
   const strength = getPasswordStrength();
+
+  // Derived history collections for UI
+  const historyQuery = historySearch.trim().toLowerCase();
+  const historyBase = passwordHistory.filter((item) => {
+    if (historyFavoritesOnly && !item.favorite) return false;
+    if (historyQuery) {
+      const note = item.note ? item.note.toLowerCase() : "";
+      if (
+        !item.value.toLowerCase().includes(historyQuery) &&
+        !note.includes(historyQuery)
+      )
+        return false;
+    }
+    return true;
+  });
+  const historySorted = [...historyBase].sort((a, b) =>
+    historySort === "newest"
+      ? b.createdAt - a.createdAt
+      : a.createdAt - b.createdAt
+  );
+  const historyGrouped = historySorted.reduce<Record<string, HistoryItem[]>>(
+    (acc, item) => {
+      const d = new Date(item.createdAt);
+      const key = d.toLocaleDateString();
+      (acc[key] ||= []).push(item);
+      return acc;
+    },
+    {}
+  );
 
   // Entropy & time-to-crack estimates
   const estimate = (() => {
@@ -924,7 +959,6 @@ export function PasswordGenerator() {
           </div>
         </CardContent>
       </Card>
-
       {/* Password Options */}
       <Card className="lg:self-start">
         <CardHeader>
@@ -1261,7 +1295,6 @@ export function PasswordGenerator() {
           </Button>
         </CardContent>
       </Card>
-
       {passwordHistory.length > 0 && (
         <Card className="order-2 lg:order-none">
           <CardHeader>
@@ -1301,152 +1334,218 @@ export function PasswordGenerator() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Quick actions */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setPasswordHistory((prev) => prev.filter((h) => h.favorite))
-                }
-                disabled={passwordHistory.every((h) => !h.favorite)}
-              >
-                Show favorites only
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setPasswordHistory((prev) =>
-                    [...prev].sort((a, b) => b.createdAt - a.createdAt)
-                  )
-                }
-              >
-                Sort newest
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setPasswordHistory((prev) =>
-                    [...prev].sort((a, b) => a.createdAt - b.createdAt)
-                  )
-                }
-              >
-                Sort oldest
-              </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="fav-only"
+                  className="text-xs text-muted-foreground"
+                >
+                  Favorites only
+                </Label>
+                <Switch
+                  id="fav-only"
+                  checked={historyFavoritesOnly}
+                  onCheckedChange={setHistoryFavoritesOnly}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Label
+                  htmlFor="pin-fav"
+                  className="text-xs text-muted-foreground"
+                >
+                  Pin favorites
+                </Label>
+                <Switch
+                  id="pin-fav"
+                  checked={historyPinFavorites}
+                  onCheckedChange={setHistoryPinFavorites}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={historySort === "newest" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setHistorySort("newest")}
+                >
+                  Sort newest
+                </Button>
+                <Button
+                  variant={historySort === "oldest" ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setHistorySort("oldest")}
+                >
+                  Sort oldest
+                </Button>
+              </div>
+              <div className="ml-auto">
+                <Input
+                  placeholder="Search…"
+                  value={historySearch}
+                  onChange={(e) => setHistorySearch(e.target.value)}
+                  className="h-8 w-44"
+                />
+              </div>
             </div>
 
-            {/* Group by date */}
+            {/* Group by date (collapsible) */}
             <div className="space-y-3">
-              {Object.entries(
-                passwordHistory.reduce<Record<string, HistoryItem[]>>(
-                  (acc, item) => {
-                    const d = new Date(item.createdAt);
-                    const key = d.toLocaleDateString();
-                    (acc[key] ||= []).push(item);
-                    return acc;
-                  },
-                  {}
-                )
-              ).map(([date, items]) => (
-                <div key={date} className="border rounded-md">
-                  <div className="px-3 py-2 text-sm font-medium bg-secondary/40 flex items-center justify-between">
-                    <span>{date}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {items.length} item(s)
-                    </span>
-                  </div>
-                  <div className="p-2 space-y-2">
-                    {items.map((item, idx) => (
-                      <div
-                        key={`${item.value}-${item.createdAt}-${idx}`}
-                        className="flex items-center justify-between p-2 rounded border"
-                      >
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <code className="text-sm font-mono truncate">
-                              {item.value}
-                            </code>
-                            <span className="text-xs text-muted-foreground">
-                              {item.type === "random"
-                                ? `${item.length} chars`
-                                : `${item.wordCount} words`}
-                            </span>
-                            {item.favorite && (
-                              <Star className="h-3.5 w-3.5 text-amber-500" />
-                            )}
-                          </div>
-                          {item.note && (
-                            <div className="text-xs text-muted-foreground truncate">
-                              {item.note}
-                            </div>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => copyToClipboard(item.value)}
-                            className="h-8 w-8 p-0"
-                            aria-label="Copy history password"
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() =>
-                              setPasswordHistory((prev) =>
-                                prev.map((h) =>
-                                  h.createdAt === item.createdAt &&
-                                  h.value === item.value
-                                    ? { ...h, favorite: !h.favorite }
-                                    : h
-                                )
-                              )
-                            }
-                            className="h-8 w-8 p-0"
-                            aria-label="Toggle favorite"
-                          >
-                            <Star
-                              className={`h-4 w-4 ${
-                                item.favorite ? "text-amber-500" : ""
-                              }`}
-                            />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              const note = prompt("Add note", item.note ?? "");
-                              if (note !== null)
-                                setPasswordHistory((prev) =>
-                                  prev.map((h) =>
-                                    h.createdAt === item.createdAt &&
-                                    h.value === item.value
-                                      ? { ...h, note: note || undefined }
-                                      : h
-                                  )
-                                );
-                            }}
-                            className="h-8 w-8 p-0"
-                            aria-label="Edit note"
-                          >
-                            <StickyNote className="h-4 w-4" />
-                          </Button>
-                        </div>
+              <Accordion type="multiple" className="w-full">
+                {Object.entries(historyGrouped).map(([date, items]) => (
+                  <AccordionItem
+                    key={date}
+                    value={date}
+                    className="border rounded-md"
+                  >
+                    <AccordionTrigger className="px-3 py-2 text-sm font-medium bg-secondary/40">
+                      <div className="w-full flex items-center justify-between gap-2">
+                        <span className="mr-auto text-left">{date}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {items.length} item(s)
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            copyToClipboard(
+                              items.map((i) => i.value).join("\n")
+                            );
+                          }}
+                        >
+                          <Copy className="mr-2 h-4 w-4" /> Copy group
+                        </Button>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <div className="p-2 space-y-2">
+                        {(historyPinFavorites
+                          ? [...items].sort(
+                              (a, b) =>
+                                (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
+                            )
+                          : items
+                        ).map((item, idx) => (
+                          <div
+                            key={`${item.value}-${item.createdAt}-${idx}`}
+                            className="flex items-center justify-between p-2 rounded border"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2">
+                                <code className="text-sm font-mono truncate">
+                                  {item.value}
+                                </code>
+                                <span className="text-xs text-muted-foreground">
+                                  {item.type === "random"
+                                    ? `${item.length} chars`
+                                    : `${item.wordCount} words`}
+                                </span>
+                                {item.favorite && (
+                                  <Star className="h-3.5 w-3.5 text-amber-500" />
+                                )}
+                              </div>
+                              {item.note && (
+                                <div className="text-xs text-muted-foreground truncate">
+                                  {item.note}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => copyToClipboard(item.value)}
+                                className="h-8 w-8 p-0"
+                                aria-label="Copy history password"
+                              >
+                                <Copy className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setPasswordHistory((prev) =>
+                                    prev.map((h) =>
+                                      h.createdAt === item.createdAt &&
+                                      h.value === item.value
+                                        ? { ...h, favorite: !h.favorite }
+                                        : h
+                                    )
+                                  )
+                                }
+                                className="h-8 w-8 p-0"
+                                aria-label="Toggle favorite"
+                              >
+                                <Star
+                                  className={`h-4 w-4 ${
+                                    item.favorite ? "text-amber-500" : ""
+                                  }`}
+                                />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  const note = prompt(
+                                    "Add note",
+                                    item.note ?? ""
+                                  );
+                                  if (note !== null)
+                                    setPasswordHistory((prev) =>
+                                      prev.map((h) =>
+                                        h.createdAt === item.createdAt &&
+                                        h.value === item.value
+                                          ? { ...h, note: note || undefined }
+                                          : h
+                                      )
+                                    );
+                                }}
+                                className="h-8 w-8 p-0"
+                                aria-label="Edit note"
+                              >
+                                <StickyNote className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  if (
+                                    confirm("Delete this entry?") &&
+                                    confirm(
+                                      "Are you sure? This cannot be undone."
+                                    )
+                                  ) {
+                                    setPasswordHistory((prev) =>
+                                      prev.filter(
+                                        (h) =>
+                                          !(
+                                            h.createdAt === item.createdAt &&
+                                            h.value === item.value
+                                          )
+                                      )
+                                    );
+                                  }
+                                }}
+                                className="h-8 w-8 p-0"
+                                aria-label="Delete entry"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                ))}
+              </Accordion>
             </div>
           </CardContent>
         </Card>
       )}
 
       {/* Security Tips */}
-      <Card className="order-3 lg:order-none">
+      {/* <Card className="order-3 lg:order-none">
         <CardHeader>
           <CardTitle className="text-lg">Security Tips</CardTitle>
         </CardHeader>
@@ -1494,7 +1593,7 @@ export function PasswordGenerator() {
             </Button>
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       {/* Bulk Generator */}
       <Card className="md:col-span-2">
