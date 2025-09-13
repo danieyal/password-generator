@@ -41,7 +41,7 @@ export default function RootLayout({
       <head>
         <link rel="manifest" href="/manifest.webmanifest" />
         <meta name="theme-color" content="#3b82f6" />
-        <link rel="apple-touch-icon" href="/placeholder-logo.png" />
+        <link rel="apple-touch-icon" href="/icon-192.png" />
       </head>
       <body className={`font-sans ${GeistSans.variable} ${GeistMono.variable}`}>
         <ThemeProvider
