@@ -33,6 +33,7 @@ import {
   Star,
   StickyNote,
   Share2,
+  ArrowUpDown,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -59,6 +60,14 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 interface PasswordOptions {
   type: "random" | "readable";
@@ -250,6 +259,15 @@ export function PasswordGenerator() {
   const [deleteTarget, setDeleteTarget] = useState<HistoryItem | null>(null);
   const [clearDialogOpen, setClearDialogOpen] = useState<boolean>(false);
   const [clearStage, setClearStage] = useState<1 | 2>(1);
+  const [historyGroupSort, setHistoryGroupSort] = useState<{
+    key: "time" | "value" | "size" | "favorite";
+    dir: "asc" | "desc";
+  }>({ key: "time", dir: "desc" });
+  const [historyRowsPerGroup, setHistoryRowsPerGroup] = useState<number>(10);
+  const [historyPageByDate, setHistoryPageByDate] = useState<
+    Record<string, number>
+  >({});
+  const [copiedHistoryKey, setCopiedHistoryKey] = useState<string | null>(null);
 
   // Load persisted state on mount
   useEffect(() => {
@@ -1313,7 +1331,7 @@ export function PasswordGenerator() {
       {passwordHistory.length > 0 && (
         <Card className="order-2 lg:order-none">
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex md:items-center justify-between sm:flex-row flex-col gap-3">
               <div>
                 <CardTitle className="flex items-center gap-2">
                   <History className="h-5 w-5" />
@@ -1380,27 +1398,43 @@ export function PasswordGenerator() {
                 />
               </div>
               <div className="flex items-center gap-2">
-                <Button
-                  variant={historySort === "newest" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setHistorySort("newest")}
+                <Label className="text-xs text-muted-foreground">Sort</Label>
+                <Select
+                  value={historySort}
+                  onValueChange={(v: "newest" | "oldest") => setHistorySort(v)}
                 >
-                  Sort newest
-                </Button>
-                <Button
-                  variant={historySort === "oldest" ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setHistorySort("oldest")}
-                >
-                  Sort oldest
-                </Button>
+                  <SelectTrigger size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Newest first</SelectItem>
+                    <SelectItem value="oldest">Oldest first</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
-              <div className="ml-auto">
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Rows</Label>
+                <Select
+                  value={String(historyRowsPerGroup)}
+                  onValueChange={(v) => setHistoryRowsPerGroup(Number(v))}
+                >
+                  <SelectTrigger size="sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">5</SelectItem>
+                    <SelectItem value="10">10</SelectItem>
+                    <SelectItem value="25">25</SelectItem>
+                    <SelectItem value="50">50</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="mr-auto">
                 <Input
                   placeholder="Search…"
                   value={historySearch}
                   onChange={(e) => setHistorySearch(e.target.value)}
-                  className="h-8 w-44"
+                  className="h-8 w-full"
                 />
               </div>
             </div>
@@ -1436,109 +1470,267 @@ export function PasswordGenerator() {
                       </div>
                     </AccordionTrigger>
                     <AccordionContent>
-                      <div className="p-2 space-y-2">
-                        {(historyPinFavorites
-                          ? [...items].sort(
-                              (a, b) =>
-                                (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
-                            )
-                          : items
-                        ).map((item, idx) => (
-                          <div
-                            key={`${item.value}-${item.createdAt}-${idx}`}
-                            className="flex items-center justify-between p-2 rounded border"
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2">
-                                <code className="text-sm font-mono truncate">
-                                  {item.value}
-                                </code>
-                                <span className="text-xs text-muted-foreground">
-                                  {item.type === "random"
-                                    ? `${item.length} chars`
-                                    : `${item.wordCount} words`}
+                      <div className="p-2">
+                        {(() => {
+                          const base = historyPinFavorites
+                            ? [...items].sort(
+                                (a, b) =>
+                                  (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
+                              )
+                            : [...items];
+                          const dir = historyGroupSort.dir === "asc" ? 1 : -1;
+                          const sorted =
+                            historyGroupSort.key === "time"
+                              ? [...base].sort(
+                                  (a, b) => dir * (a.createdAt - b.createdAt)
+                                )
+                              : historyGroupSort.key === "value"
+                              ? [...base].sort(
+                                  (a, b) => dir * a.value.localeCompare(b.value)
+                                )
+                              : historyGroupSort.key === "size"
+                              ? [...base].sort((a, b) => {
+                                  const av =
+                                    a.type === "random"
+                                      ? a.length || 0
+                                      : a.wordCount || 0;
+                                  const bv =
+                                    b.type === "random"
+                                      ? b.length || 0
+                                      : b.wordCount || 0;
+                                  return dir * (av - bv);
+                                })
+                              : [...base].sort(
+                                  (a, b) =>
+                                    dir *
+                                    ((a.favorite ? 1 : 0) -
+                                      (b.favorite ? 1 : 0))
+                                );
+                          const page = historyPageByDate[date] ?? 1;
+                          const pageCount = Math.max(
+                            1,
+                            Math.ceil(sorted.length / historyRowsPerGroup)
+                          );
+                          const start = (page - 1) * historyRowsPerGroup;
+                          const end = start + historyRowsPerGroup;
+                          const pageItems = sorted.slice(start, end);
+                          const toggleSort = (
+                            key: "time" | "value" | "size" | "favorite"
+                          ) => {
+                            setHistoryGroupSort((prev) =>
+                              prev.key === key
+                                ? {
+                                    key,
+                                    dir: prev.dir === "asc" ? "desc" : "asc",
+                                  }
+                                : { key, dir: "asc" }
+                            );
+                          };
+                          return (
+                            <>
+                              <div className="flex items-center justify-between gap-2 mb-2 text-xs text-muted-foreground">
+                                <span>
+                                  Showing {start + 1}-
+                                  {Math.min(end, sorted.length)} of{" "}
+                                  {sorted.length}
                                 </span>
-                                {item.favorite && (
-                                  <Star className="h-3.5 w-3.5 text-amber-500" />
-                                )}
-                              </div>
-                              {item.note && (
-                                <div className="text-xs text-muted-foreground truncate">
-                                  {item.note}
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={page <= 1}
+                                    onClick={() =>
+                                      setHistoryPageByDate((prev) => ({
+                                        ...prev,
+                                        [date]: Math.max(1, page - 1),
+                                      }))
+                                    }
+                                  >
+                                    Prev
+                                  </Button>
+                                  <span>
+                                    Page {page} / {pageCount}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    disabled={page >= pageCount}
+                                    onClick={() =>
+                                      setHistoryPageByDate((prev) => ({
+                                        ...prev,
+                                        [date]: Math.min(pageCount, page + 1),
+                                      }))
+                                    }
+                                  >
+                                    Next
+                                  </Button>
                                 </div>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => copyToClipboard(item.value)}
-                                className="h-8 w-8 p-0"
-                                aria-label="Copy history password"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setPasswordHistory((prev) =>
-                                    prev.map((h) =>
-                                      h.createdAt === item.createdAt &&
-                                      h.value === item.value
-                                        ? { ...h, favorite: !h.favorite }
-                                        : h
-                                    )
-                                  )
-                                }
-                                className="h-8 w-8 p-0"
-                                aria-label="Toggle favorite"
-                              >
-                                <Star
-                                  className={`h-4 w-4 ${
-                                    item.favorite ? "text-amber-500" : ""
-                                  }`}
-                                />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  const note = prompt(
-                                    "Add note",
-                                    item.note ?? ""
-                                  );
-                                  if (note !== null)
-                                    setPasswordHistory((prev) =>
-                                      prev.map((h) =>
-                                        h.createdAt === item.createdAt &&
-                                        h.value === item.value
-                                          ? { ...h, note: note || undefined }
-                                          : h
-                                      )
-                                    );
-                                }}
-                                className="h-8 w-8 p-0"
-                                aria-label="Edit note"
-                              >
-                                <StickyNote className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setDeleteTarget(item);
-                                  setDeleteStage(1);
-                                  setDeleteDialogOpen(true);
-                                }}
-                                className="h-8 w-8 p-0"
-                                aria-label="Delete entry"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
+                              </div>
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="w-[60%]">
+                                      <span
+                                        onClick={() => toggleSort("value")}
+                                        className="inline-flex items-center gap-1 cursor-pointer select-none"
+                                      >
+                                        Password
+                                        <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />
+                                      </span>
+                                    </TableHead>
+                                    <TableHead>
+                                      <span
+                                        onClick={() => toggleSort("size")}
+                                        className="inline-flex items-center gap-1 cursor-pointer select-none"
+                                      >
+                                        Details
+                                        <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />
+                                      </span>
+                                    </TableHead>
+                                    <TableHead className="hidden sm:table-cell">
+                                      Note
+                                    </TableHead>
+                                    <TableHead className="text-right">
+                                      Actions
+                                    </TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {pageItems.map((item, idx) => (
+                                    <TableRow
+                                      key={`${item.value}-${item.createdAt}-${idx}`}
+                                    >
+                                      <TableCell>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <code className="text-sm font-mono truncate">
+                                            {item.value}
+                                          </code>
+                                          {item.favorite && (
+                                            <Star className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell>
+                                        <span className="text-xs text-muted-foreground">
+                                          {item.type === "random"
+                                            ? `${item.length} chars`
+                                            : `${item.wordCount} words`}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="hidden sm:table-cell max-w-[18rem]">
+                                        <span className="text-xs text-muted-foreground truncate block">
+                                          {item.note ?? ""}
+                                        </span>
+                                      </TableCell>
+                                      <TableCell className="text-right">
+                                        <div className="flex justify-end items-center gap-1">
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              copyToClipboard(item.value);
+                                              setCopiedHistoryKey(
+                                                `${item.value}-${item.createdAt}`
+                                              );
+                                              setTimeout(
+                                                () =>
+                                                  setCopiedHistoryKey((k) =>
+                                                    k ===
+                                                    `${item.value}-${item.createdAt}`
+                                                      ? null
+                                                      : k
+                                                  ),
+                                                1500
+                                              );
+                                            }}
+                                            className="h-8 w-8 p-0"
+                                            aria-label="Copy history password"
+                                          >
+                                            {copiedHistoryKey ===
+                                            `${item.value}-${item.createdAt}` ? (
+                                              <Check className="h-4 w-4 text-accent" />
+                                            ) : (
+                                              <Copy className="h-4 w-4" />
+                                            )}
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() =>
+                                              setPasswordHistory((prev) =>
+                                                prev.map((h) =>
+                                                  h.createdAt ===
+                                                    item.createdAt &&
+                                                  h.value === item.value
+                                                    ? {
+                                                        ...h,
+                                                        favorite: !h.favorite,
+                                                      }
+                                                    : h
+                                                )
+                                              )
+                                            }
+                                            className="h-8 w-8 p-0"
+                                            aria-label="Toggle favorite"
+                                          >
+                                            <Star
+                                              className={`h-4 w-4 ${
+                                                item.favorite
+                                                  ? "text-amber-500"
+                                                  : ""
+                                              }`}
+                                            />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              const note = prompt(
+                                                "Add note",
+                                                item.note ?? ""
+                                              );
+                                              if (note !== null)
+                                                setPasswordHistory((prev) =>
+                                                  prev.map((h) =>
+                                                    h.createdAt ===
+                                                      item.createdAt &&
+                                                    h.value === item.value
+                                                      ? {
+                                                          ...h,
+                                                          note:
+                                                            note || undefined,
+                                                        }
+                                                      : h
+                                                  )
+                                                );
+                                            }}
+                                            className="h-8 w-8 p-0"
+                                            aria-label="Edit note"
+                                          >
+                                            <StickyNote className="h-4 w-4" />
+                                          </Button>
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => {
+                                              setDeleteTarget(item);
+                                              setDeleteStage(1);
+                                              setDeleteDialogOpen(true);
+                                            }}
+                                            className="h-8 w-8 p-0"
+                                            aria-label="Delete entry"
+                                          >
+                                            <Trash2 className="h-4 w-4" />
+                                          </Button>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </>
+                          );
+                        })()}
                       </div>
                     </AccordionContent>
                   </AccordionItem>
