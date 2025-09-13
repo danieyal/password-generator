@@ -1463,40 +1463,41 @@ export function PasswordGenerator() {
                     <AccordionContent>
                       <div className="p-2">
                         {(() => {
-                          const base = historyPinFavorites
-                            ? [...items].sort(
-                                (a, b) =>
-                                  (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
-                              )
-                            : [...items];
+                          const base = [...items];
                           const dir = historyGroupSort.dir === "asc" ? 1 : -1;
-                          const sorted =
-                            historyGroupSort.key === "time"
-                              ? [...base].sort(
-                                  (a, b) => dir * (a.createdAt - b.createdAt)
-                                )
-                              : historyGroupSort.key === "value"
-                              ? [...base].sort(
-                                  (a, b) => dir * a.value.localeCompare(b.value)
-                                )
-                              : historyGroupSort.key === "size"
-                              ? [...base].sort((a, b) => {
-                                  const av =
-                                    a.type === "random"
-                                      ? a.length || 0
-                                      : a.wordCount || 0;
-                                  const bv =
-                                    b.type === "random"
-                                      ? b.length || 0
-                                      : b.wordCount || 0;
-                                  return dir * (av - bv);
-                                })
-                              : [...base].sort(
-                                  (a, b) =>
-                                    dir *
-                                    ((a.favorite ? 1 : 0) -
-                                      (b.favorite ? 1 : 0))
-                                );
+                          const sorted = [...base].sort((a, b) => {
+                            if (historyPinFavorites) {
+                              const favDiff =
+                                (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0);
+                              if (favDiff !== 0) return favDiff;
+                            }
+                            if (historyGroupSort.key === "time") {
+                              const cmp = a.createdAt - b.createdAt;
+                              if (cmp !== 0) return dir * cmp;
+                            } else if (historyGroupSort.key === "value") {
+                              const cmp = a.value.localeCompare(b.value);
+                              if (cmp !== 0) return dir * cmp;
+                            } else if (historyGroupSort.key === "size") {
+                              const av =
+                                a.type === "random"
+                                  ? a.length || 0
+                                  : a.wordCount || 0;
+                              const bv =
+                                b.type === "random"
+                                  ? b.length || 0
+                                  : b.wordCount || 0;
+                              const cmp = av - bv;
+                              if (cmp !== 0) return dir * cmp;
+                            } else if (historyGroupSort.key === "favorite") {
+                              const cmp =
+                                (a.favorite ? 1 : 0) - (b.favorite ? 1 : 0);
+                              if (cmp !== 0) return dir * cmp;
+                            }
+                            return (
+                              b.createdAt - a.createdAt ||
+                              a.value.localeCompare(b.value)
+                            );
+                          });
                           const page = historyPageByDate[date] ?? 1;
                           const pageCount = Math.max(
                             1,
