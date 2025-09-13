@@ -1438,7 +1438,7 @@ export function PasswordGenerator() {
                     value={date}
                     className="border rounded-md"
                   >
-                    <AccordionTrigger className="px-3 py-2 text-sm font-medium bg-secondary/40">
+                    <AccordionTrigger className="px-3 py-2 items-center text-sm font-medium bg-secondary/40">
                       <div className="w-full flex items-center justify-between gap-2">
                         <span className="mr-auto text-left">{date}</span>
                         <span className="text-xs text-muted-foreground">
